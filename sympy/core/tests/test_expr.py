@@ -6,11 +6,12 @@ from sympy import (Add, Basic, S, Symbol, Wild, Float, Integer, Rational, I,
     Piecewise, Mul, Pow, nsimplify, ratsimp, trigsimp, radsimp, powsimp,
     simplify, together, collect, factorial, apart, combsimp, factor, refine,
     cancel, Tuple, default_sort_key, DiracDelta, gamma, Dummy, Sum, E,
-    exp_polar, Lambda, expand, diff, O, Heaviside, Si)
+    exp_polar, expand, diff, O, Heaviside, Si, Max)
 from sympy.core.function import AppliedUndef
+from sympy.core.compatibility import range
 from sympy.physics.secondquant import FockState
 from sympy.physics.units import meter
-from sympy.core.compatibility import xrange
+from sympy.series.formal import FormalPowerSeries
 
 from sympy.utilities.pytest import raises, XFAIL
 
@@ -241,6 +242,7 @@ def test_series_expansion_for_uniform_order():
     assert (1/x + y + y*x + x).series(x, 0, 0) == 1/x + O(1, x)
     assert (1/x + y + y*x + x).series(x, 0, 1) == 1/x + y + O(x)
 
+
 def test_leadterm():
     assert (3 + 2*x**(log(3)/log(2) - 1)).leadterm(x) == (3, 0)
 
@@ -313,7 +315,7 @@ def test_atoms():
     assert Rational(1, 2).atoms() == set([S.Half])
     assert Rational(1, 2).atoms(Symbol) == set([])
 
-    assert sin(oo).atoms(oo) == set([oo])
+    assert sin(oo).atoms(oo) == set()
 
     assert Poly(0, x).atoms() == set([S.Zero])
     assert Poly(1, x).atoms() == set([S.One])
@@ -416,6 +418,11 @@ def test_is_rational_function():
     assert (sin(y)/x).is_rational_function(y) is False
     assert (sin(y)/x).is_rational_function(x) is True
     assert (sin(y)/x).is_rational_function(x, y) is False
+
+    assert (S.NaN).is_rational_function() is False
+    assert (S.Infinity).is_rational_function() is False
+    assert (-S.Infinity).is_rational_function() is False
+    assert (S.ComplexInfinity).is_rational_function() is False
 
 
 def test_is_algebraic_expr():
@@ -539,7 +546,7 @@ def test_as_numer_denom():
     assert (a/x + b/2/x + c/.5/x).as_numer_denom() == \
         (2*a + b + 4.0*c, 2*x)
     # this should take no more than a few seconds
-    assert int(log(Add(*[Dummy()/i/x for i in xrange(1, 705)]
+    assert int(log(Add(*[Dummy()/i/x for i in range(1, 705)]
                        ).as_numer_denom()[1]/x).n(4)) == 705
     for i in [S.Infinity, S.NegativeInfinity, S.ComplexInfinity]:
         assert (i + x/3).as_numer_denom() == \
@@ -560,6 +567,8 @@ def test_as_numer_denom():
 
 
 def test_as_independent():
+    assert S.Zero.as_independent(x, as_Add=True) == (0, 0)
+    assert S.Zero.as_independent(x, as_Add=False) == (0, 0)
     assert (2*x*sin(x) + y + x).as_independent(x) == (y, x + 2*x*sin(x))
     assert (2*x*sin(x) + y + x).as_independent(y) == (x + 2*x*sin(x), y)
 
@@ -606,6 +615,18 @@ def test_as_independent():
     # issue 5784
     assert (x + Integral(x, (x, 1, 2))).as_independent(x, strict=True) == \
            (Integral(x, (x, 1, 2)), x)
+
+    eq = Add(x, -x, 2, -3, evaluate=False)
+    assert eq.as_independent(x) == (-1, Add(x, -x, evaluate=False))
+    eq = Mul(x, 1/x, 2, -3, evaluate=False)
+    eq.as_independent(x) == (-6, Mul(x, 1/x, evaluate=False))
+
+
+@XFAIL
+def test_call_2():
+    # TODO UndefinedFunction does not subclass Expr
+    f = Function('f')
+    assert (2*f)(x) == 2*f(x)
 
 
 def test_replace():
@@ -1032,6 +1053,12 @@ def test_extractions():
     assert (-x + y).could_extract_minus_sign() is True
 
 
+def test_nan_extractions():
+    for r in (1, 0, I, nan):
+        assert nan.extract_additively(r) is None
+        assert nan.extract_multiplicatively(r) is None
+
+
 def test_coeff():
     assert (x + 1).coeff(x + 1) == 1
     assert (3*x).coeff(0) == 0
@@ -1251,6 +1278,7 @@ def test_issue_5300():
 
 
 def test_as_coeff_Mul():
+    assert S(0).as_coeff_Mul() == (S.One, S.Zero)
     assert Integer(3).as_coeff_Mul() == (Integer(3), Integer(1))
     assert Rational(3, 4).as_coeff_Mul() == (Rational(3, 4), Integer(1))
     assert Float(5.0).as_coeff_Mul() == (Float(5.0), Integer(1))
@@ -1451,7 +1479,6 @@ def test_is_constant():
     p = symbols('p', positive=True)
     assert Pow(x, S(0), evaluate=False).is_constant() is True  # == 1
     assert Pow(S(0), x, evaluate=False).is_constant() is False  # == 0 or 1
-    assert Pow(S(0), p, evaluate=False).is_constant() is True  # == 1
     assert (2**x).is_constant() is False
     assert Pow(S(2), S(3), evaluate=False).is_constant() is True
 
@@ -1531,6 +1558,9 @@ def test_random():
     assert posify(x)[0]._random() is not None
     assert lucas(n)._random(2, -2, 0, -1, 1) is None
 
+    # issue 8662
+    assert Piecewise((Max(x, y), z))._random() is None
+
 
 def test_round():
     from sympy.abc import x
@@ -1588,6 +1618,8 @@ def test_round():
     assert a.round(30) == Float('2.999999999999999999999999999', '')
 
     raises(TypeError, lambda: x.round())
+    f = Function('f')
+    raises(TypeError, lambda: f(1).round())
 
     # exact magnitude of 10
     assert str(S(1).round()) == '1.'
@@ -1608,6 +1640,12 @@ def test_round():
 
     # issue 6914
     assert (I**(I + 3)).round(3) == Float('-0.208', '')*I
+
+    # issue 8720
+    assert S(-123.6).round() == -124.
+    assert S(-1.5).round() == -2.
+    assert S(-100.5).round() == -101.
+    assert S(-1.5 - 10.5*I).round() == -2.0 - 11.0*I
 
     # issue 7961
     assert str(S(0.006).round(2)) == '0.01'
@@ -1658,7 +1696,13 @@ def test_issue_6325():
     e.diff(t, 2) == ans
     assert diff(e, t, 2, simplify=False) != ans
 
+
 def test_issue_7426():
     f1 = a % c
     f2 = x % z
     assert f1.equals(f2) == False
+
+
+def test_issue_10161():
+    x = symbols('x', real=True)
+    assert x*abs(x)*abs(x) == x**3

@@ -52,7 +52,7 @@ firstauthor = "Ondřej Čertík"
 authors = AUTHORS[AUTHORS.find(firstauthor):].strip().split('\n')
 
 # People who don't want to be listed in AUTHORS
-authors_skip = ["Kirill Smelkov <kirr@landau.phys.spbu.ru>"]
+authors_skip = ["Kirill Smelkov <kirr@landau.phys.spbu.ru>", "Sergey B Kirpichev <skirpichev@gmail.com>"]
 
 predate_git = 0
 
@@ -104,8 +104,7 @@ if git_count != adjusted_authors_count:
 else:
     print()
     print(green(filldedent("""Congratulations. The AUTHORS and .mailmap files
-appear to be up to date. You should now verify that doc/src/aboutus has %s
-people.""" % authors_count)))
+appear to be up to date. There are %s authors.""" % authors_count)))
 
 if exit1:
     print()

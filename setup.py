@@ -2,7 +2,9 @@
 """Distutils based setup script for SymPy.
 
 This uses Distutils (http://python.org/sigs/distutils-sig/) the standard
-python mechanism for installing packages. For the easiest installation
+python mechanism for installing packages.  Optionally, you can use
+Setuptools (http://pythonhosted.org/setuptools/setuptools.html) to automatically
+handle dependencies.  For the easiest installation
 just type the command (you'll probably need root privileges for that):
 
     python setup.py install
@@ -27,10 +29,28 @@ Or, if all else fails, feel free to write to the sympy list at
 sympy@googlegroups.com and ask for help.
 """
 
-from distutils.core import setup, Command
 import sys
 import subprocess
 import os
+import shutil
+import glob
+
+mpmath_version = '0.19'
+
+try:
+    from setuptools import setup, Command
+except ImportError:
+    from distutils.core import setup, Command
+
+    # handle mpmath deps in the hard way:
+    from distutils.version import LooseVersion
+    try:
+        import mpmath
+        if mpmath.__version__ < LooseVersion(mpmath_version):
+            raise ImportError
+    except ImportError:
+        print("Please install the mpmath package with a version >= %s" % mpmath_version)
+        sys.exit(-1)
 
 PY3 = sys.version_info[0] > 2
 
@@ -52,6 +72,7 @@ modules = [
     'sympy.core',
     'sympy.core.benchmarks',
     'sympy.crypto',
+    'sympy.deprecated',
     'sympy.diffgeom',
     'sympy.external',
     'sympy.functions',
@@ -60,7 +81,6 @@ modules = [
     'sympy.functions.elementary.benchmarks',
     'sympy.functions.special',
     'sympy.functions.special.benchmarks',
-    'sympy.galgebra',
     'sympy.geometry',
     'sympy.integrals',
     'sympy.integrals.benchmarks',
@@ -68,16 +88,10 @@ modules = [
     'sympy.liealgebras',
     'sympy.logic',
     'sympy.logic.algorithms',
-    'sympy.logic.benchmarks',
     'sympy.logic.utilities',
     'sympy.matrices',
     'sympy.matrices.benchmarks',
     'sympy.matrices.expressions',
-    'sympy.mpmath',
-    'sympy.mpmath.calculus',
-    'sympy.mpmath.functions',
-    'sympy.mpmath.libmp',
-    'sympy.mpmath.matrices',
     'sympy.ntheory',
     'sympy.parsing',
     'sympy.physics',
@@ -97,6 +111,7 @@ modules = [
     'sympy.polys.domains',
     'sympy.printing',
     'sympy.printing.pretty',
+    'sympy.sandbox',
     'sympy.series',
     'sympy.series.benchmarks',
     'sympy.sets',
@@ -107,6 +122,7 @@ modules = [
     'sympy.strategies',
     'sympy.strategies.branch',
     'sympy.tensor',
+    'sympy.tensor.array',
     'sympy.unify',
     'sympy.utilities',
     'sympy.utilities.mathml',
@@ -135,10 +151,7 @@ class audit(Command):
         except ImportError:
             print("In order to run the audit, you need to have PyFlakes installed.")
             sys.exit(-1)
-        # We don't want to audit external dependencies
-        ext = ('mpmath',)
-        dirs = (os.path.join(*d) for d in
-               (m.split('.') for m in modules) if d[1] not in ext)
+        dirs = (os.path.join(*d) for d in (m.split('.') for m in modules))
         warns = 0
         for dir in dirs:
             for filename in os.listdir(dir):
@@ -163,14 +176,28 @@ class clean(Command):
         pass
 
     def run(self):
-        import os
-        os.system("find . -name '*.pyc' | xargs rm -f")
-        os.system("rm -f python-build-stamp-2.4")
-        os.system("rm -f MANIFEST")
-        os.system("rm -rf build")
-        os.system("rm -rf dist")
-        os.system("rm -rf doc/_build")
-        os.system("rm -f sample.tex")
+        dir_setup = os.path.dirname(os.path.realpath(__file__))
+        curr_dir = os.getcwd()
+        for root, dirs, files in os.walk(dir_setup):
+            for file in files:
+                if file.endswith('.pyc') and os.path.isfile:
+                    os.remove(os.path.join(root, file))
+
+        os.chdir(dir_setup)
+        names = ["python-build-stamp-2.4", "MANIFEST", "build", "dist", "doc/_build", "sample.tex"]
+
+        for f in names:
+            if os.path.isfile(f):
+                os.remove(f)
+            elif os.path.isdir(f):
+                shutil.rmtree(f)
+
+        for name in glob.glob(os.path.join(dir_setup, "doc", "src", "modules", \
+                                           "physics", "vector", "*.pdf")):
+            if os.path.isfile(name):
+                os.remove(name)
+
+        os.chdir(curr_dir)
 
 
 class test_sympy(Command):
@@ -233,12 +260,12 @@ tests = [
     'sympy.concrete.tests',
     'sympy.core.tests',
     'sympy.crypto.tests',
+    'sympy.deprecated.tests',
     'sympy.diffgeom.tests',
     'sympy.external.tests',
     'sympy.functions.combinatorial.tests',
     'sympy.functions.elementary.tests',
     'sympy.functions.special.tests',
-    'sympy.galgebra.tests',
     'sympy.geometry.tests',
     'sympy.integrals.tests',
     'sympy.interactive.tests',
@@ -246,7 +273,6 @@ tests = [
     'sympy.logic.tests',
     'sympy.matrices.expressions.tests',
     'sympy.matrices.tests',
-    'sympy.mpmath.tests',
     'sympy.ntheory.tests',
     'sympy.parsing.tests',
     'sympy.physics.hep.tests',
@@ -264,6 +290,7 @@ tests = [
     'sympy.polys.tests',
     'sympy.printing.pretty.tests',
     'sympy.printing.tests',
+    'sympy.sandbox.tests',
     'sympy.series.tests',
     'sympy.sets.tests',
     'sympy.simplify.tests',
@@ -271,31 +298,17 @@ tests = [
     'sympy.stats.tests',
     'sympy.strategies.branch.tests',
     'sympy.strategies.tests',
+    'sympy.tensor.array.tests',
     'sympy.tensor.tests',
     'sympy.unify.tests',
     'sympy.utilities.tests',
     'sympy.vector.tests',
-    ]
-
-classifiers = [
-    'License :: OSI Approved :: BSD License',
-    'Operating System :: OS Independent',
-    'Programming Language :: Python',
-    'Topic :: Scientific/Engineering',
-    'Topic :: Scientific/Engineering :: Mathematics',
-    'Topic :: Scientific/Engineering :: Physics',
-    'Programming Language :: Python :: 2',
-    'Programming Language :: Python :: 2.6',
-    'Programming Language :: Python :: 2.7',
-    'Programming Language :: Python :: 3',
-    'Programming Language :: Python :: 3.2',
-    'Programming Language :: Python :: 3.3',
 ]
 
 long_description = '''SymPy is a Python library for symbolic mathematics. It aims
 to become a full-featured computer algebra system (CAS) while keeping the code
 as simple as possible in order to be comprehensible and easily extensible.
-SymPy is written entirely in Python and does not require any external libraries.'''
+SymPy is written entirely in Python.'''
 
 exec(open('sympy/release.py').read())
 with open('sympy/__init__.py') as f:
@@ -336,5 +349,6 @@ setup(name='sympy',
         'Programming Language :: Python :: 3.2',
         'Programming Language :: Python :: 3.3',
         'Programming Language :: Python :: 3.4',
-        ]
+        ],
+      install_requires=['mpmath>=%s' % mpmath_version]
       )
